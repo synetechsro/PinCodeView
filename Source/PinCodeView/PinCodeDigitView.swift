@@ -11,6 +11,7 @@ import UIKit
 public protocol PinCodeDigitView: class {
     init()
     var digit: String? { get set }
+    var placeholder: String { get set }
     var state: PinCodeDigitViewState! { get set }
     func configure(withState: PinCodeDigitViewState)
     

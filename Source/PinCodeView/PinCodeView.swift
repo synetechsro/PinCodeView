@@ -29,7 +29,7 @@ fileprivate func ==(lhs: PinCodeView.State, rhs: PinCodeView.State) -> Bool {
     }
 }
 
-@objc public class PinCodeView: UIStackView {
+@objc public class PinCodeView: UIView {
     
     public enum TextType {
         case numbers
@@ -42,6 +42,8 @@ fileprivate func ==(lhs: PinCodeView.State, rhs: PinCodeView.State) -> Bool {
         case finished
         case disabled
     }
+
+    private let stack = UIStackView()
     
     @objc public weak var delegate: PinCodeViewDelegate?
     
@@ -76,6 +78,8 @@ fileprivate func ==(lhs: PinCodeView.State, rhs: PinCodeView.State) -> Bool {
             }
         }
     }
+
+    private var placeholder: String = ""
     
     fileprivate var digitViews = [PinCodeDigitView]()
     fileprivate var digitState: State = .inserting(0) {
@@ -102,35 +106,33 @@ fileprivate func ==(lhs: PinCodeView.State, rhs: PinCodeView.State) -> Bool {
         configure()
     }
     
-    @objc required public init(coder: NSCoder) {
+    @objc required public init?(coder: NSCoder) {
         super.init(coder: coder)
         configure()
     }
     
     private func configure() {
-        self.axis = .horizontal
-        self.distribution = .fill
+        stack.axis = .horizontal
+        stack.distribution = .fill
         self.translatesAutoresizingMaskIntoConstraints = false
-        
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
         configureGestures()
     }
     
     private func configureGestures() {
         let tap = UITapGestureRecognizer(target: self, action: #selector(didTap))
+        isUserInteractionEnabled = true
         addGestureRecognizer(tap)
-        
-        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(didLongPress))
-        longPress.minimumPressDuration = 0.25
-        addGestureRecognizer(longPress)
     }
     
     private func configureDigitViews() {
         assert(digitViewInit != nil, "must provide a single digit view initializer")
         
-        self.spacing = CGFloat(itemSpacing)
+        stack.spacing = CGFloat(itemSpacing)
         
-        self.arrangedSubviews.forEach { view in
-            self.removeArrangedSubview(view)
+        stack.arrangedSubviews.forEach { view in
+            stack.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
         
@@ -139,7 +141,7 @@ fileprivate func ==(lhs: PinCodeView.State, rhs: PinCodeView.State) -> Bool {
         for _ in 0..<numberOfDigits {
             let digitView = digitViewInit()
             digitView.view.translatesAutoresizingMaskIntoConstraints = false
-            self.addArrangedSubview(digitView.view)
+            stack.addArrangedSubview(digitView.view)
             digitViews.append(digitView)
         }
         
@@ -147,35 +149,67 @@ fileprivate func ==(lhs: PinCodeView.State, rhs: PinCodeView.State) -> Bool {
             // TODO: better custom separators
             for idx in stride(from: groupingSize, to: numberOfDigits, by: groupingSize).reversed() {
                 let separator = PinCodeSeparatorView(text: "-")
-                self.insertArrangedSubview(separator, at: idx)
+                stack.insertArrangedSubview(separator, at: idx)
             }
         }
+        applyPlaceholder()
     }
     
     private var didLayoutSubviews = false
+    private let field = UITextField(frame: .zero)
     override public func layoutSubviews() {
         super.layoutSubviews()
         
         if !didLayoutSubviews {
             didLayoutSubviews = true
             configureDigitViews()
+            addSubview(stack)
+            addConstraints([
+                NSLayoutConstraint(item: stack,
+                                   attribute: .left,
+                                   relatedBy: .equal,
+                                   toItem: self,
+                                   attribute: .left,
+                                   multiplier: 1.0,
+                                   constant: 0),
+                NSLayoutConstraint(item: stack,
+                                   attribute: .top,
+                                   relatedBy: .equal,
+                                   toItem: self,
+                                   attribute: .top,
+                                   multiplier: 1.0,
+                                   constant: 0),
+                NSLayoutConstraint(item: stack,
+                                   attribute: .right,
+                                   relatedBy: .equal,
+                                   toItem: self,
+                                   attribute: .right,
+                                   multiplier: 1.0,
+                                   constant: 0),
+                NSLayoutConstraint(item: stack,
+                                   attribute: .bottom,
+                                   relatedBy: .equal,
+                                   toItem: self,
+                                   attribute: .bottom,
+                                   multiplier: 1.0,
+                                   constant: 0)
+                ])
+            stack.isUserInteractionEnabled = false
+            addSubview(field)
+            field.autocorrectionType = .no
+            field.frame = CGRect.zero
+            field.isUserInteractionEnabled = true
+            field.keyboardType = keyboardType
+            field.clearsOnBeginEditing = true
+            field.clearsOnInsertion = true
+            field.returnKeyType = .done
+            field.delegate = self
         }
     }
     
     @objc func didTap() {
-        guard !self.isFirstResponder else { return }
-        becomeFirstResponder()
-    }
-    
-    @objc func didLongPress(gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began else { return }
-        
-        if !self.isFirstResponder  {
-            self.becomeFirstResponder()
-        }
-        
-        UIMenuController.shared.setTargetRect(self.bounds, in: self)
-        UIMenuController.shared.setMenuVisible(true, animated: true)
+        guard !field.isFirstResponder else { return }
+        field.becomeFirstResponder()
     }
     
     // MARK: handle text input
@@ -229,24 +263,21 @@ fileprivate func ==(lhs: PinCodeView.State, rhs: PinCodeView.State) -> Bool {
         anim.autoreverses = true
         layer.add(anim, forKey: "position")
     }
+
+    public func setPlaceholder(_ placeholder: String) {
+        self.placeholder = placeholder
+        applyPlaceholder()
+    }
+
+    private func applyPlaceholder() {
+        let placeholderArray = Array(placeholder)
+        for index in 0..<min(digitViews.count, placeholder.count) {
+            digitViews[index].placeholder = "\(placeholderArray[index])"
+        }
+    }
 }
 
 extension PinCodeView {
-    override public func paste(_ sender: Any?) {
-        guard let string = UIPasteboard.general.string else { return }
-        let text: String
-        switch textType {
-        case .numbers:
-            text = string.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-            
-        case .numbersAndLetters:
-            text = string.components(separatedBy: CharacterSet.alphanumerics.inverted).joined()
-        }
-        
-        let index = text.index(text.startIndex, offsetBy: min(numberOfDigits, text.count))
-        insertText(String(text[..<index]))
-    }
-    
     override public var canBecomeFirstResponder: Bool {
         return canReceiveText
     }
@@ -271,7 +302,28 @@ extension PinCodeView {
     }
 }
 
-extension PinCodeView: UIKeyInput {
+
+extension PinCodeView: UITextFieldDelegate {
+
+    public func textField(_ textField: UITextField,
+                          shouldChangeCharactersIn range: NSRange,
+                          replacementString string: String) -> Bool {
+        insertText(string)
+        return true
+    }
+
+    public func textFieldShouldClear(_ textField: UITextField) -> Bool {
+        deleteBackward()
+        return false
+    }
+
+    public func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        field.resignFirstResponder()
+        return true
+    }
+}
+
+extension PinCodeView {
     public var hasText: Bool {
         return !text.isEmpty
     }
