@@ -197,10 +197,9 @@ fileprivate func ==(lhs: PinCodeView.State, rhs: PinCodeView.State) -> Bool {
             stack.isUserInteractionEnabled = false
             addSubview(field)
             field.autocorrectionType = .no
-            field.frame = CGRect.zero
+            field.frame = CGRect(x: -1000, y: -1000, width: 0, height: 0)
             field.isUserInteractionEnabled = true
             field.keyboardType = keyboardType
-            field.clearsOnBeginEditing = true
             field.clearsOnInsertion = true
             field.returnKeyType = .done
             field.delegate = self
@@ -283,7 +282,12 @@ extension PinCodeView {
     }
     
     override public func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        return canReceiveText && action == #selector(paste(_:))
+        if action == #selector(copy(_:))
+            || action == #selector(selectAll(_:))
+            || action == #selector(paste(_:)) {
+            return false
+        }
+        return super.canPerformAction(action, withSender: sender)
     }
     
     public var keyboardType: UIKeyboardType {
@@ -302,9 +306,7 @@ extension PinCodeView {
     }
 }
 
-
 extension PinCodeView: UITextFieldDelegate {
-
     public func textField(_ textField: UITextField,
                           shouldChangeCharactersIn range: NSRange,
                           replacementString string: String) -> Bool {
